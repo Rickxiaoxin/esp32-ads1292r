@@ -10,6 +10,8 @@
 #include "lwip/sys.h"
 #include "lwip/sockets.h"
 #include <lwip/netdb.h>
+#include "driver/uart.h"
+#include "esp_dsp.h"
 
 #include "ads1292r.h"
 
@@ -28,50 +30,87 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 static void intr_task(void *arg)
 {
     uint32_t io_num;
-    // char rx_buffer[128];
-    // char host_ip[] = HOST_IP_ADDR;
-    int addr_family = 0;
-    int ip_protocol = 0;
+    uint8_t tx_buffer[30];
+    int raw_ECG = 0;
+    float ECG;
+    // int RES = 0;
+    // int addr_family = 0;
+    // int ip_protocol = 0;
     while (1)
     {
-        struct sockaddr_in dest_addr;
-        dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
-        dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(PORT);
-        addr_family = AF_INET;
-        ip_protocol = IPPROTO_IP;
+        // struct sockaddr_in dest_addr;
+        // dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+        // dest_addr.sin_family = AF_INET;
+        // dest_addr.sin_port = htons(PORT);
+        // addr_family = AF_INET;
+        // ip_protocol = IPPROTO_IP;
 
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0)
-        {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-            break;
-        }
+        // int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+        // if (sock < 0)
+        // {
+        //     ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+        //     break;
+        // }
 
-        struct timeval timeout;
-        timeout.tv_sec = 10;
-        timeout.tv_usec = 0;
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+        // struct timeval timeout;
+        // timeout.tv_sec = 10;
+        // timeout.tv_usec = 0;
+        // setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
 
-        ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, PORT);
+        // ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, PORT);
+
+        uart_config_t uart_config = {
+            .baud_rate = 115200,
+            .data_bits = UART_DATA_8_BITS,
+            .parity = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+            .source_clk = UART_SCLK_DEFAULT,
+        };
+        int intr_alloc_flags = 0;
+
+        ESP_ERROR_CHECK(uart_driver_install(0, 512, 512, 0, NULL, intr_alloc_flags));
+        ESP_ERROR_CHECK(uart_param_config(0, &uart_config));
+        ESP_ERROR_CHECK(uart_set_pin(0, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
         while (1)
         {
             if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY))
             {
                 ads1292r_data(spi, ads1292r_sample_data);
-                int err = sendto(sock, ads1292r_sample_data, 9, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-                if (err < 0)
+
+                // uint32_t res = ads1292r_sample_data[3] << 24 | ads1292r_sample_data[4] << 16 | ads1292r_sample_data[5] << 8;
+                uint32_t raw_ecg = ads1292r_sample_data[6] << 24 | ads1292r_sample_data[7] << 16 | ads1292r_sample_data[8] << 8;
+                // printf("res: %lx ecg: %lx\n", res, ecg);
+                // RES = (int)res >> 8;
+                raw_ECG = (int)raw_ecg >> 8;
+                ECG = (float)raw_ECG / 8388607.0 * 2.42 / 6;
+                // printf("res: %x ecg: %x\n", RES, ECG);
+
+                uint8_t _cnt = 0;
+                tx_buffer[_cnt++] = 0xaa;
+                tx_buffer[_cnt++] = 0xff;
+                tx_buffer[_cnt++] = 0xf1;
+                tx_buffer[_cnt++] = 4;
+                for (int i = 0; i < 4; i++)
+                    tx_buffer[_cnt++] = *((uint8_t *)&ECG + i);
+                uint8_t sc = 0, ac = 0;
+                for (uint8_t i = 0; i < tx_buffer[3] + 4; i++)
                 {
-                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                    break;
+                    sc += tx_buffer[i];
+                    ac += sc;
                 }
-                printf("data is %x %x %x %x %x %x %x %x %x\n",
-                       ads1292r_sample_data[0], ads1292r_sample_data[1],
-                       ads1292r_sample_data[2], ads1292r_sample_data[3],
-                       ads1292r_sample_data[4], ads1292r_sample_data[5],
-                       ads1292r_sample_data[6], ads1292r_sample_data[7],
-                       ads1292r_sample_data[8]);
-                // vTaskDelay(1000 / portTICK_PERIOD_MS);
+                tx_buffer[_cnt++] = sc;
+                tx_buffer[_cnt++] = ac;
+
+                uart_write_bytes(0, tx_buffer, _cnt);
+
+                // int err = sendto(sock, tx_buffer, _cnt, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+                // if (err < 0)
+                // {
+                //     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                //     break;
+                // }
+                // vTaskDelay(10 / portTICK_PERIOD_MS);
             }
         }
     }
@@ -148,7 +187,6 @@ void ads1292r_init(spi_device_handle_t spi_handle)
     gpio_isr_handler_add(GPIO_DRDY, gpio_isr_handler, (void *)GPIO_DRDY);
 
     gpio_set_level(GPIO_START, 0);
-    gpio_set_level(GPIO_CS, 1);
     gpio_set_level(GPIO_RESET, 0);
     sleep(1);
     gpio_set_level(GPIO_RESET, 1);
@@ -159,7 +197,6 @@ void ads1292r_init(spi_device_handle_t spi_handle)
     sleep(1);
 
     gpio_set_level(GPIO_START, 0);
-    gpio_set_level(GPIO_CS, 0);
     ads1292r_cmd(spi_handle, SDATAC, false);
     ads1292r_write_reg(spi_handle, ADS1292_REG_CONFIG2, 0xE0);
     usleep(10);

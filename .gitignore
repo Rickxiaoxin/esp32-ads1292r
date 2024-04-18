@@ -1,0 +1,10 @@
+build/
+sdkconfig
+sdkconfig.old
+/CMakeLists.txt
+dependencies.lock
+README.md
+sdkconfig.defaults
+components/esp-dsp/
+.devcontainer
+.vscode

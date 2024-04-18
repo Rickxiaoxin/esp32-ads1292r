@@ -8,9 +8,12 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
+#include "driver/uart.h"
 
 #include "wifiudp.h"
 #include "ads1292r.h"
+
+#define UART_PORT_NUM 1
 
 extern spi_device_handle_t spi;
 
@@ -28,8 +31,7 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    wifi_init_sta();
-    // xTaskCreate(udp_client_task, "udp_client", 4096, NULL, 5, NULL);
+    // wifi_init_sta();
 
     adc_oneshot_unit_handle_t adc_handle;
     adc_oneshot_unit_init_cfg_t init_config = {
@@ -63,10 +65,8 @@ void app_main(void)
     spi_device_interface_config_t devcfg = {
         .clock_speed_hz = 1 * 1000 * 1000,
         .mode = 1,
-        .spics_io_num = -1,
-        .queue_size = 7,
-        .pre_cb = cs_low,
-        .post_cb = cs_high,
+        .spics_io_num = GPIO_CS,
+        .queue_size = 10,
     };
     ret = spi_bus_initialize(ADS1292R_HOST, &buscfg, SPI_DMA_CH_AUTO);
     ESP_ERROR_CHECK(ret);

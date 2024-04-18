@@ -21,55 +21,6 @@ extern uint8_t ads1292r_sample_data[9];
 static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 
-// void udp_client_task(void *pvParameters)
-// {
-//     // char rx_buffer[128];
-//     // char host_ip[] = HOST_IP_ADDR;
-//     int addr_family = 0;
-//     int ip_protocol = 0;
-//     while (1)
-//     {
-//         struct sockaddr_in dest_addr;
-//         dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
-//         dest_addr.sin_family = AF_INET;
-//         dest_addr.sin_port = htons(PORT);
-//         addr_family = AF_INET;
-//         ip_protocol = IPPROTO_IP;
-
-//         int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-//         if (sock < 0)
-//         {
-//             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-//             break;
-//         }
-
-//         struct timeval timeout;
-//         timeout.tv_sec = 10;
-//         timeout.tv_usec = 0;
-//         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
-
-//         ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, PORT);
-
-//         while (1)
-//         {
-//             int err = sendto(sock, ads1292r_sample_data, 9, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-//             if (err < 0)
-//             {
-//                 ESP_LOGE(TAG, "Error occured during sending: errno %d", errno);
-//                 break;
-//             }
-//         }
-
-//         if (sock != -1)
-//         {
-//             ESP_LOGE(TAG, "Shutting down socket and restarting...");
-//             shutdown(sock, 0);
-//             close(sock);
-//         }
-//     }
-//     vTaskDelete(NULL);
-// }
-
 void event_handler(void *arg, esp_event_base_t event_base,
                    int32_t event_id, void *event_data)
 {
